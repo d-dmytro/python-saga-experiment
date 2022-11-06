@@ -47,7 +47,6 @@ def create_payment_failed_handler(publisher: Publisher):
     def payment_failed_handler(body: bytes):
         # fail order
         payment = json.loads(body)
-        print(payment)
         if (not payment["order_id"] in orders):
             return
         order = orders[payment["order_id"]]
