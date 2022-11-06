@@ -9,10 +9,6 @@ from initialize_messaging import initialize_messaging
 from messaging import Publisher, create_subscription_thread
 from utils import colored, generate_id
 
-init_colorama(autoreset=True)
-
-should_fail = Event()
-
 class Booking:
     def __init__(self, id: str, order_id: str, payment_id: str, status: str, color: str) -> None:
         self.id = id
@@ -24,16 +20,14 @@ class Booking:
 def print_booking(booking: Booking):
     print("Booking", booking.id, "for order", colored(str(booking.order_id), booking.color), "-", booking.status)
 
-bookings: dict[str, Booking] = {}
-
-def create_payment_created_handler(publisher: Publisher):
+def create_payment_created_handler(publisher: Publisher, bookings: dict[str, Booking], ev_should_fail: Event):
     def payment_created_handler(body: bytes):
         # create booking
         payment = json.loads(body)
         booking = Booking(generate_id(), payment["order_id"], payment["id"], "pending", payment["color"])
         bookings[booking.id] = booking
 
-        if (not should_fail.is_set()):
+        if (not ev_should_fail.is_set()):
             booking.status = "completed"
             publisher.publish("bookings.booking-created", {
                 "id": booking.id,
@@ -53,14 +47,20 @@ def create_payment_created_handler(publisher: Publisher):
     return payment_created_handler
 
 def main():
+    init_colorama(autoreset=True)
+
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("-f", "--fail", action="store_true")
     args = arg_parser.parse_args()
     fail: bool = args.fail
 
+    bookings: dict[str, Booking] = {}
+
+    ev_should_fail = Event()
+
     if (fail):
-        should_fail.set()
-        print("Fail bookings enabled")
+        ev_should_fail.set()
+        print(colored("[x] Fail bookings enabled", "RED"))
 
     connection = BlockingConnection(ConnectionParameters(host="localhost"))
     channel = connection.channel()
@@ -73,7 +73,7 @@ def main():
     publisher = Publisher(ev_stopping)
     publisher.start()
 
-    payment_created_handler = create_payment_created_handler(publisher)
+    payment_created_handler = create_payment_created_handler(publisher, bookings, ev_should_fail)
 
     payment_created_thread = create_subscription_thread(
         queue_name="bookings-payment-created",

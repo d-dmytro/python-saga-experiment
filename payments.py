@@ -9,10 +9,6 @@ from initialize_messaging import initialize_messaging
 from messaging import Publisher, create_subscription_thread
 from utils import colored, generate_id
 
-init_colorama(autoreset=True)
-
-should_fail = Event()
-
 class Payment:
     def __init__(self, id: str, order_id: str, status: str, color: str) -> None:
         self.id = id
@@ -23,16 +19,14 @@ class Payment:
 def print_payment(payment: Payment):
     print("Payment", payment.id, "for order", colored(str(payment.order_id), payment.color), "-", payment.status)
 
-payments: dict[str, Payment] = {}
-
-def create_order_created_handler(publisher: Publisher):
+def create_order_created_handler(publisher: Publisher, payments: dict[str, Payment], ev_should_fail: Event):
     def order_created_handler(body: bytes):
         # create payment
         order = json.loads(body)
         payment = Payment(generate_id(), order["id"], "pending", order["color"])
         payments[payment.id] = payment
 
-        if (not should_fail.is_set()):
+        if (not ev_should_fail.is_set()):
             payment.status = "completed"
             publisher.publish("bookings.payment-created", {
                 "id": payment.id,
@@ -49,7 +43,7 @@ def create_order_created_handler(publisher: Publisher):
         print_payment(payment)
     return order_created_handler
 
-def create_booking_failed_handler(publisher: Publisher):
+def create_booking_failed_handler(publisher: Publisher, payments: dict[str, Payment]):
     def booking_failed_handler(body: bytes):
         # cancel payment
         booking = json.loads(body)
@@ -61,14 +55,18 @@ def create_booking_failed_handler(publisher: Publisher):
     return booking_failed_handler
 
 def main():
+    init_colorama(autoreset=True)
+
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("-f", "--fail", action="store_true", help="fail payments")
     args = arg_parser.parse_args()
     fail: bool = args.fail
 
+    ev_should_fail = Event()
+
     if (fail):
-        should_fail.set()
-        print("Fail payments enabled")
+        ev_should_fail.set()
+        print(colored("[x] Fail payments enabled", "RED"))
 
     connection = BlockingConnection(ConnectionParameters(host="localhost"))
     channel = connection.channel()
@@ -76,13 +74,15 @@ def main():
     channel.close()
     connection.close()
 
+    payments: dict[str, Payment] = {}
+
     ev_stopping = Event()
 
     publisher = Publisher(ev_stopping)
     publisher.start()
 
-    order_created_handler = create_order_created_handler(publisher)
-    booking_failed_handler = create_booking_failed_handler(publisher)
+    order_created_handler = create_order_created_handler(publisher, payments, ev_should_fail)
+    booking_failed_handler = create_booking_failed_handler(publisher, payments)
 
     order_created_thread = create_subscription_thread(
         queue_name="payments-order-created",

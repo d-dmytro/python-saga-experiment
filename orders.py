@@ -6,9 +6,7 @@ from pika.adapters.blocking_connection import BlockingConnection
 from pika.connection import ConnectionParameters
 from initialize_messaging import initialize_messaging
 from messaging import Publisher, create_subscription_thread
-from utils import generate_id, get_random_color, colored
-
-init_colorama(autoreset=True)
+from utils import generate_id, get_random_color, colored, ShutdownException
 
 class Order:
     def __init__(self, id: str, status = "pending") -> None:
@@ -19,9 +17,7 @@ class Order:
 def print_order(order: Order):
     print("Order", colored(str(order.id), order.color), "-", order.status)
 
-orders: dict[str, Order] = {}
-
-def create_booking_created_handler(publisher: Publisher):
+def create_booking_created_handler(publisher: Publisher, orders: dict[str, Order]):
     def booking_created_handler(body: bytes):
         # complete order
         booking = json.loads(body)
@@ -32,7 +28,7 @@ def create_booking_created_handler(publisher: Publisher):
         print_order(order)
     return booking_created_handler
 
-def create_booking_failed_handler(publisher: Publisher):
+def create_booking_failed_handler(publisher: Publisher, orders: dict[str, Order]):
     def booking_failed_handler(body: bytes):
         # fail order
         booking = json.loads(body)
@@ -43,7 +39,7 @@ def create_booking_failed_handler(publisher: Publisher):
         print_order(order)
     return booking_failed_handler
 
-def create_payment_failed_handler(publisher: Publisher):
+def create_payment_failed_handler(publisher: Publisher, orders: dict[str, Order]):
     def payment_failed_handler(body: bytes):
         # fail order
         payment = json.loads(body)
@@ -55,20 +51,24 @@ def create_payment_failed_handler(publisher: Publisher):
     return payment_failed_handler
 
 def main():
+    init_colorama(autoreset=True)
+
     connection = BlockingConnection(ConnectionParameters(host="localhost"))
     channel = connection.channel()
     initialize_messaging(channel)
     channel.close()
     connection.close()
 
+    orders: dict[str, Order] = {}
+
     ev_stopping = Event()
 
     publisher = Publisher(ev_stopping)
     publisher.start()
 
-    booking_created_handler = create_booking_created_handler(publisher)
-    booking_failed_handler = create_booking_failed_handler(publisher)
-    payment_failed_handler = create_payment_failed_handler(publisher)
+    booking_created_handler = create_booking_created_handler(publisher, orders)
+    booking_failed_handler = create_booking_failed_handler(publisher, orders)
+    payment_failed_handler = create_payment_failed_handler(publisher, orders)
 
     payment_failed_thread = create_subscription_thread(
         queue_name="orders-payment-failed",
@@ -88,17 +88,35 @@ def main():
         ev_stopping=ev_stopping,
     )
 
-    def exit_signal_handler(signum, frame):
+    def quit():
         print("Exiting...")
         ev_stopping.set()
 
+    def exit_signal_handler(signum, frame):
+        quit()
+        raise ShutdownException()
+
     signal.signal(signal.SIGINT, exit_signal_handler)
 
-    # Create an order
-    order = Order(generate_id())
-    orders[order.id] = order
-    publisher.publish("bookings.order-created", {"id": order.id, "color": order.color})
-    print_order(order)
+    try:
+        while True:
+            command = input()
+
+            if (command not in {"", "create", "exit"}):
+                print('Enter "create" or "exit" or just hit ENTER')
+                continue
+
+            if (command == "exit"):
+                quit()
+                break
+
+            # Create an order
+            order = Order(generate_id())
+            orders[order.id] = order
+            publisher.publish("bookings.order-created", {"id": order.id, "color": order.color})
+            print_order(order)
+    except ShutdownException:
+        pass
 
     booking_created_thread.join()
     booking_failed_thread.join()
