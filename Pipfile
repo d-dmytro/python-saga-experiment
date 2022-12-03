@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 pika = "*"
 colorama = "*"
+psycopg2 = "*"
 
 [dev-packages]
 
