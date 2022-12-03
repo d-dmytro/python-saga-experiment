@@ -15,7 +15,7 @@ class SagaManager:
         saga = saga_class(uuid4().hex, data)
         self.run_saga(saga)
 
-    def run_saga_step(self, saga: Saga):
+    def run_current_step(self, saga: Saga):
         is_compensation = saga.status == "compensation"
         step_def = saga.get_current_step_def()
 
@@ -42,7 +42,7 @@ class SagaManager:
             )
 
     def run_saga(self, saga: Saga):
-        self.run_saga_step(saga)
+        self.run_current_step(saga)
         saga.tick()
         saga = self.saga_dao.create(saga)
 
