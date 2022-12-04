@@ -1,6 +1,7 @@
 import json
+from uuid import uuid4
 from typing import Tuple
-from orchestrated_saga.saga import Saga
+from orchestrated_saga.saga import Saga, SagaAttributes
 
 
 class SagaDao:
@@ -17,25 +18,25 @@ class SagaDao:
             return Saga
         return self.saga_classes[saga_name]
 
+    def save(self, saga: Saga):
+        if not saga.get_id():
+            return self.create(saga)
+        return self.update(saga)
+
     def create(self, saga: Saga):
+        saga.set_id(uuid4().hex)
         with self.connection.cursor() as curs:
             curs.execute(
                 """
                 INSERT INTO sagas (id, name, data, current_step, status)
                 VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE
-                SET
-                    name = excluded.name,
-                    data = excluded.data,
-                    current_step = excluded.current_step,
-                    status = excluded.status
                 """,
                 (
-                    saga.id,
+                    saga.get_id(),
                     saga.name,
-                    json.dumps(saga.data),
-                    saga.current_step,
-                    saga.status,
+                    json.dumps(saga.get_data()),
+                    saga.get_current_step(),
+                    saga.get_status(),
                 ),
             )
         self.connection.commit()
@@ -51,10 +52,10 @@ class SagaDao:
                 """,
                 (
                     saga.name,
-                    json.dumps(saga.data),
-                    saga.current_step,
-                    saga.status,
-                    saga.id,
+                    json.dumps(saga.get_data()),
+                    saga.get_current_step(),
+                    saga.get_status(),
+                    saga.get_id(),
                 ),
             )
         self.connection.commit()
@@ -76,8 +77,10 @@ class SagaDao:
                 return None
 
             return self.get_saga_class(record[1])(
-                record[0],
-                json.loads(record[2]),
-                record[3],
-                record[4],
+                SagaAttributes(
+                    id=record[0],
+                    data=json.loads(record[2]),
+                    current_step=record[3],
+                    status=record[4],
+                )
             )

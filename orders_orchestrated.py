@@ -58,33 +58,33 @@ class CreateBookingCommand(Command):
 
 
 def create_order(saga: Saga):
-    order = Order(saga.data["id"], "pending", saga.data["color"])
+    order = Order(saga.get_data()["id"], "pending", saga.get_data()["color"])
     orders[order.id] = order
     print_order(order)
 
 
 def cancel_order(saga: Saga):
-    order = orders[saga.data["id"]]
+    order = orders[saga.get_data()["id"]]
     order.status = "canceled"
     print_order(order)
 
 
 def complete_order(saga: Saga):
-    order = orders[saga.data["id"]]
+    order = orders[saga.get_data()["id"]]
     order.status = "completed"
     print_order(order)
 
 
 def create_payment(saga: Saga):
-    return CreatePaymentCommand(saga.id, saga.data)
+    return CreatePaymentCommand(saga.get_id(), saga.get_data())
 
 
 def cancel_payment(saga: Saga):
-    return CancelPaymentCommand(saga.id, saga.data)
+    return CancelPaymentCommand(saga.get_id(), saga.get_data())
 
 
 def create_booking(saga: Saga):
-    return CreateBookingCommand(saga.id, saga.data)
+    return CreateBookingCommand(saga.get_id(), saga.get_data())
 
 
 class CreateOrderSaga(Saga):

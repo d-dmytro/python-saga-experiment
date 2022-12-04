@@ -1,8 +1,7 @@
-from uuid import uuid4
 from messaging.publisher import Publisher
 from orchestrated_saga.command import Command
 from orchestrated_saga.command_response import CommandResponse
-from orchestrated_saga.saga import Saga
+from orchestrated_saga.saga import Saga, SagaAttributes
 from orchestrated_saga.saga_dao import SagaDao
 
 
@@ -12,11 +11,11 @@ class SagaManager:
         self.publisher = publisher
 
     def start_saga(self, saga_class: type[Saga], data: dict):
-        saga = saga_class(uuid4().hex, data)
+        saga = saga_class(SagaAttributes(data=data, status="pending", current_step=0))
         self.run_saga(saga)
 
     def run_current_step(self, saga: Saga):
-        is_compensation = saga.status == "compensation"
+        is_compensation = saga.get_status() == "compensation"
         step_def = saga.get_current_step_def()
 
         if saga.is_local_step():
@@ -44,9 +43,9 @@ class SagaManager:
     def run_saga(self, saga: Saga):
         self.run_current_step(saga)
         saga.tick()
-        saga = self.saga_dao.create(saga)
+        saga = self.saga_dao.save(saga)
 
-        if saga.status in ("pending", "compensation"):
+        if saga.get_status() in ("pending", "compensation"):
             self.run_saga(saga)
 
     def handle_saga_command_response(self, response: CommandResponse):
@@ -58,5 +57,5 @@ class SagaManager:
         saga.tick_command_response(response.ok)
         saga = self.saga_dao.update(saga)
 
-        if saga.status in ("compensation", "pending"):
+        if saga.get_status() in ("compensation", "pending"):
             self.run_saga(saga)

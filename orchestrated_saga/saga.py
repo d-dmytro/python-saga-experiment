@@ -1,3 +1,4 @@
+from typing import TypedDict
 from orchestrated_saga.step import LocalStepDef, ParticipantStepDef, StepDef
 
 
@@ -9,8 +10,8 @@ class SagaState:
         self.saga.state = state(self.saga)
 
     def set_status(self, status: str):
-        if self.saga.status != status:
-            self.saga.status = status
+        if self.saga.get_status() != status:
+            self.saga.set_status(status)
             self.set_state(states[status])
 
 
@@ -110,19 +111,23 @@ states: dict[str, SagaState] = {
 }
 
 
+class SagaAttributes(TypedDict):
+    id: str
+    data: dict
+    current_step: int
+    status: str
+
+
 class Saga:
     command_key: str
     step_defs: list[StepDef]
 
-    def __init__(self, id: str, data: dict, current_step=0, status="pending"):
-        self.id = id
-        self.data = data
-        self.current_step = current_step
-        self.status = status
-        self.state = states[self.status](self)
+    def __init__(self, attributes: SagaAttributes):
+        self.attributes = attributes
+        self.state = states[self.get_status()](self)
 
     def get_current_step_def(self):
-        return self.step_defs[self.current_step]
+        return self.step_defs[self.get_current_step()]
 
     def is_local_step(self):
         return isinstance(self.get_current_step_def(), LocalStepDef)
@@ -131,19 +136,46 @@ class Saga:
         return isinstance(self.get_current_step_def(), ParticipantStepDef)
 
     def increment_step(self):
-        self.current_step += 1
+        self.set_current_step(self.get_current_step() + 1)
 
     def decrement_step(self):
-        self.current_step -= 1
+        self.set_current_step(self.get_current_step() - 1)
 
     def is_last_step(self):
-        return self.current_step == len(self.step_defs) - 1
+        return self.get_current_step() == len(self.step_defs) - 1
 
     def is_first_step(self):
-        return self.current_step == 0
+        return self.get_current_step() == 0
 
     def tick(self):
         self.state.tick()
 
     def tick_command_response(self, ok: bool):
         self.state.tick_command_response(ok)
+
+    def get_id(self):
+        try:
+            return self.attributes["id"]
+        except:
+            return ""
+
+    def set_id(self, val: str):
+        self.attributes["id"] = val
+
+    def get_data(self):
+        return self.attributes["data"]
+
+    def set_data(self, val: dict):
+        self.attributes["data"] = val
+
+    def get_current_step(self):
+        return self.attributes["current_step"]
+
+    def set_current_step(self, val: int):
+        self.attributes["current_step"] = val
+
+    def get_status(self):
+        return self.attributes["status"]
+
+    def set_status(self, val: str):
+        self.attributes["status"] = val
