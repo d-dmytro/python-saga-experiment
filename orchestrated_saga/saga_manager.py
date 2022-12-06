@@ -12,9 +12,21 @@ class SagaManager:
 
     def start_saga(self, saga_class: type[Saga], data: dict):
         saga = saga_class(SagaAttributes(data=data, status="pending", current_step=0))
-        self.run_saga(saga)
+        self.__run_saga(saga)
 
-    def run_current_step(self, saga: Saga):
+    def handle_saga_command_response(self, response: CommandResponse):
+        saga = self.saga_dao.get_one_by_id(response.saga_id)
+
+        if saga == None:
+            raise Exception(f"saga {response.saga_id} not found")
+
+        saga.tick_command_response(response.ok)
+        saga = self.saga_dao.save(saga)
+
+        if saga.get_status() in ("compensation", "pending"):
+            self.__run_saga(saga)
+
+    def __run_current_step(self, saga: Saga):
         is_compensation = saga.get_status() == "compensation"
         step_def = saga.get_current_step_def()
 
@@ -31,6 +43,7 @@ class SagaManager:
                 else step_def.callback(saga)
             )
 
+            # @TODO: fix the publish key.
             self.publisher.publish(
                 "create_order_saga.command",
                 {
@@ -40,22 +53,10 @@ class SagaManager:
                 },
             )
 
-    def run_saga(self, saga: Saga):
-        self.run_current_step(saga)
+    def __run_saga(self, saga: Saga):
+        self.__run_current_step(saga)
         saga.tick()
         saga = self.saga_dao.save(saga)
 
         if saga.get_status() in ("pending", "compensation"):
-            self.run_saga(saga)
-
-    def handle_saga_command_response(self, response: CommandResponse):
-        saga = self.saga_dao.get_one_by_id(response.saga_id)
-
-        if saga == None:
-            raise Exception(f"saga {response.saga_id} not found")
-
-        saga.tick_command_response(response.ok)
-        saga = self.saga_dao.update(saga)
-
-        if saga.get_status() in ("compensation", "pending"):
-            self.run_saga(saga)
+            self.__run_saga(saga)

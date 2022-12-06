@@ -17,10 +17,10 @@ class SagaState:
 
 class Pending(SagaState):
     def tick(self):
-        if self.saga.is_last_step():
-            self.set_status("done")
-        elif self.saga.is_participant_step():
+        if self.saga.is_participant_step():
             self.set_status("processing")
+        elif self.saga.is_last_step():
+            self.set_status("done")
         elif self.saga.is_local_step():
             self.saga.increment_step()
 
@@ -55,11 +55,11 @@ class Compensation(SagaState):
     def tick(self):
         if self.saga.is_local_step():
             if self.saga.is_first_step():
-                self.set_status("done")
+                self.set_status("failed")
             else:
                 self.saga.decrement_step()
-        elif self.saga.is_last_step():
-            self.set_status("done")
+        elif self.saga.is_first_step():
+            self.set_status("failed")
         else:
             self.set_status("compensating")
 
