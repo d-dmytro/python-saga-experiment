@@ -9,6 +9,7 @@ from initialize_messaging import initialize_messaging
 from messaging import Publisher, create_subscription_thread
 from utils import colored, generate_id
 
+
 class Payment:
     def __init__(self, id: str, order_id: str, status: str, color: str) -> None:
         self.id = id
@@ -16,43 +17,64 @@ class Payment:
         self.status = status
         self.color = color
 
-def print_payment(payment: Payment):
-    print("Payment", payment.id, "for order", colored(str(payment.order_id), payment.color), "-", payment.status)
 
-def create_order_created_handler(publisher: Publisher, payments: dict[str, Payment], ev_should_fail: Event):
-    def order_created_handler(body: bytes):
+def print_payment(payment: Payment):
+    print(
+        "Payment",
+        payment.id,
+        "for order",
+        colored(str(payment.order_id), payment.color),
+        "-",
+        payment.status,
+    )
+
+
+def create_order_created_handler(
+    publisher: Publisher, payments: dict[str, Payment], ev_should_fail: Event
+):
+    def order_created_handler(body: bytes, _):
         # create payment
         order = json.loads(body)
         payment = Payment(generate_id(), order["id"], "pending", order["color"])
         payments[payment.id] = payment
 
-        if (not ev_should_fail.is_set()):
+        if not ev_should_fail.is_set():
             payment.status = "completed"
-            publisher.publish("bookings.payment-created", {
-                "id": payment.id,
-                "order_id": payment.order_id,
-                "color": payment.color,
-            })
+            publisher.publish(
+                "bookings.payment-created",
+                {
+                    "id": payment.id,
+                    "order_id": payment.order_id,
+                    "color": payment.color,
+                },
+            )
         else:
             payment.status = "failed"
-            publisher.publish("bookings.payment-failed", {
-                "id": payment.id,
-                "order_id": payment.order_id,
-                "color": payment.color,
-            })
+            publisher.publish(
+                "bookings.payment-failed",
+                {
+                    "id": payment.id,
+                    "order_id": payment.order_id,
+                    "color": payment.color,
+                },
+            )
         print_payment(payment)
+
     return order_created_handler
 
+
 def create_booking_failed_handler(publisher: Publisher, payments: dict[str, Payment]):
-    def booking_failed_handler(body: bytes):
+    def booking_failed_handler(body: bytes, _):
         # cancel payment
         booking = json.loads(body)
-        if (not booking["payment_id"] in payments):
+        if not booking["payment_id"] in payments:
             return
         payment = payments[booking["payment_id"]]
         payment.status = "cancelled"
         print_payment(payment)
+
     return booking_failed_handler
+
 
 def main():
     init_colorama(autoreset=True)
@@ -64,7 +86,7 @@ def main():
 
     ev_should_fail = Event()
 
-    if (fail):
+    if fail:
         ev_should_fail.set()
         print(colored("[x] Fail payments enabled", "RED"))
 
@@ -81,7 +103,9 @@ def main():
     publisher = Publisher(ev_stopping)
     publisher.start()
 
-    order_created_handler = create_order_created_handler(publisher, payments, ev_should_fail)
+    order_created_handler = create_order_created_handler(
+        publisher, payments, ev_should_fail
+    )
     booking_failed_handler = create_booking_failed_handler(publisher, payments)
 
     order_created_thread = create_subscription_thread(
@@ -105,5 +129,6 @@ def main():
     booking_failed_thread.join()
     order_created_thread.join()
     publisher.join()
+
 
 main()

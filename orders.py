@@ -21,7 +21,7 @@ def print_order(order: Order):
 
 
 def create_booking_created_handler(publisher: Publisher, orders: dict[str, Order]):
-    def booking_created_handler(body: bytes):
+    def booking_created_handler(body: bytes, _):
         # complete order
         booking = json.loads(body)
         if not booking["order_id"] in orders:
@@ -34,7 +34,7 @@ def create_booking_created_handler(publisher: Publisher, orders: dict[str, Order
 
 
 def create_booking_failed_handler(publisher: Publisher, orders: dict[str, Order]):
-    def booking_failed_handler(body: bytes):
+    def booking_failed_handler(body: bytes, _):
         # fail order
         booking = json.loads(body)
         if not booking["order_id"] in orders:
@@ -47,7 +47,7 @@ def create_booking_failed_handler(publisher: Publisher, orders: dict[str, Order]
 
 
 def create_payment_failed_handler(publisher: Publisher, orders: dict[str, Order]):
-    def payment_failed_handler(body: bytes):
+    def payment_failed_handler(body: bytes, _):
         # fail order
         payment = json.loads(body)
         if not payment["order_id"] in orders:
